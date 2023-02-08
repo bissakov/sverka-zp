@@ -57,7 +57,6 @@ class Robot:
     def convert_to_xlsb(self):
         excel = win32.Dispatch("Excel.Application")
         excel.DisplayAlerts = False
-
         for report_file in os.listdir(self.archive_info.zip_dir):
             file_name = os.path.join(self.archive_info.zip_dir, report_file)
             if not os.path.isfile(file_name):
@@ -66,6 +65,7 @@ class Robot:
             wb.SaveAs(file_name.replace('.xml', '.xlsb'), 50)
             wb.Close()
             os.unlink(file_name)
+        excel.Quit()
 
     def open_folder(self) -> None:
         path = os.path.realpath(self.dir)
