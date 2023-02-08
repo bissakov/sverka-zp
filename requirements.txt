@@ -1,4 +1,4 @@
-pywinauto==0.68
+pywinauto~=0.6
 openpyxl~=3.1
 pywin32==305
 psutil~=5.9
