@@ -151,25 +151,3 @@ def run() -> None:
                 logging.info('SQLite session closed.')
                 logging.exception(error)
                 raise error
-
-
-#
-# if __name__ == '__main__':
-#     while True:
-#         check_outlook_inbox()
-#         time.sleep(60)
-
-# try:
-#     data = get_input_data().data
-#     robot = Robot(**data)
-#     robot.run()
-# except IndexError:
-#     today = dt.now().strftime('%d.%m.%Y')
-#     email = Email(
-#         email_info=EmailInfo(email_list=ast.literal_eval({{email_list}})),
-#         subject=f'Отсутствует файл для проверки {today}',
-#         body=f'Отсутствует файл для проверки в \\\\dbu00234\\c$\\Temp\\Сверка\n\n'
-#                 f'Пожалуйста добавьте его перед запуском робота.\n\nСообщение сгенерировано автоматически. '
-#                 f'Просьба не отвечать.',
-#     )
-#     email.run()
