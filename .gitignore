@@ -1,6 +1,8 @@
 # Misc
 *.zip
 .idea
+replied_emails/*
+logs/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
