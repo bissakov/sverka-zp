@@ -3,25 +3,46 @@ from os.path import join
 import time
 from contextlib import contextmanager
 from datetime import date
-from typing import List
+from typing import Any, List
 import logger
 import logging
 from telegram import send_message
 import platform
 
+from sqlalchemy import ColumnElement, create_engine, Column, String
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 
 import win32com.client as win32
+
 
 logger.setup_logger()
 
 logging.info('Server started.')
 logging.info('Logging started.')
 
+Base = declarative_base()
+
+
+class Reply(Base):
+    __tablename__ = 'replied_emails'
+    message_id = Column(String, primary_key=True)
+
+
+db_root_folder = r'C:\Users\robot.ad\Desktop\sverka-zp\database'
+os.makedirs(db_root_folder, exist_ok=True)
+engine = create_engine(f'sqlite:///{db_root_folder}/replies.db')
+Session = sessionmaker(bind=engine)
+SESSION = Session()
+Base.metadata.create_all(engine)
+logging.info('SQLite session started.')
+
+
 PROJECT_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp'
 CHECK_INTERVAL: int = 60
 RECIPIENTS: List[str] = ['robot.ad']
 SUBJECT: str = 'test'
-REPLIES_FILE: str = join(PROJECT_FOLDER, 'replied_emails.txt')
+REPLIES_FILE: str = join(PROJECT_FOLDER, r'replied_emails\replied_emails.txt')
 REPLY_MESSAGE: str = 'Добрый день, {}\n\n' \
                      'Ответ от робота\n\nСообщение сгенерировано автоматически.'
 LACK_OF_ATTACHMENT_REPLY: str = 'Добрый день, {}\n\n' \
@@ -44,13 +65,14 @@ def dispatch(application: str) -> None:
 
 
 def save_reply(message_id: str) -> None:
-    with open(REPLIES_FILE, 'a') as file:
-        file.write(message_id + '\n')
+    replied_email = Reply(message_id=message_id)
+    SESSION.add(replied_email)
+    SESSION.commit()
 
 
-def get_replied_messages() -> List[str]:
-    with open(file=REPLIES_FILE, mode='r', encoding='utf-8') as file:
-        replied_emails = file.read().splitlines()
+def get_replied_messages() -> list[ColumnElement[Any]]:
+    replied_emails = SESSION.query(Reply.message_id).all()
+    replied_emails = [email[0] for email in replied_emails]
     return replied_emails
 
 
@@ -76,6 +98,25 @@ def attachments_present(message: win32.CDispatch) -> bool:
     return True
 
 
+def reply_to_message(message: win32.CDispatch, reply_message: str) -> None:
+    reply = message.Reply()
+    reply.Body = reply_message
+    reply.Send()
+    save_reply(message.EntryID)
+    logging.info(f'Saved message id "{message.EntryID}" to replied emails file.')
+
+
+def send_reply(message: win32.CDispatch) -> None:
+    if attachments_present(message):
+        logging.info(f'Sending succesful reply to {message.SenderName}.')
+        reply_to_message(message, REPLY_MESSAGE.format(message.SenderName))
+        logging.info(f'Succesful reply sent to {message.SenderName}.')
+    else:
+        logging.info(f'Sending reply of lack of attachment to {message.SenderName}.')
+        reply_to_message(message, LACK_OF_ATTACHMENT_REPLY.format(message.SenderName))
+        logging.info(f'Reply of lack of attachment sent to {message.SenderName}.')
+
+
 def run() -> None:
     if not os.path.exists(REPLIES_FILE):
         logging.info('File for replied emails not found. Creating replied emails file.')
@@ -94,28 +135,21 @@ def run() -> None:
                     continue
                 logging.info(f'Found {len(messages)} new messages.')
                 for message in messages:
-                    if attachments_present(message):
-                        logging.info(f'Sending succesful reply to {message.SenderName}.')
-                        reply = message.Reply()
-                        reply.Body = REPLY_MESSAGE.format(message.SenderName)
-                        reply.Send()
-                        logging.info(f'Succesful reply sent to {message.SenderName}.')
-                    else:
-                        logging.info(f'Sending reply of lack of attachment to {message.SenderName}.')
-                        reply = message.Reply()
-                        reply.Body = LACK_OF_ATTACHMENT_REPLY.format(message.SenderName)
-                        logging.info(f'Reply of lack of attachment sent to {message.SenderName}.')
-                        reply.Send()
-                    save_reply(message_id=message.EntryID)
-                    logging.info(f'Saved message id "{message.EntryID}" to replied emails file.')
+                    send_reply(message)
                 logging.info(f'All replies sent. Waiting {CHECK_INTERVAL} seconds before checking for new messages.')
                 time.sleep(CHECK_INTERVAL)
             except Exception as error:
-                logging.exception(f'An error occurred: {error}')
+                logging.exception(f'An error {error.__class__.__name__} occurred.')
                 send_message(f'Error occurred on {platform.node()}\nProcess: "Сверка зарплатной ведомости"\nError:\n{error}')
+                SESSION.close()
+                logging.info('SQLite session closed.')
+                logging.exception(error)
                 raise error
             except KeyboardInterrupt as error:
-                logging.exception(f'Keyboard interrupt. Terminating server.\n{error}')
+                logging.exception(f'Keyboard interrupt occurred.')
+                SESSION.close()
+                logging.info('SQLite session closed.')
+                logging.exception(error)
                 raise error
 
 
