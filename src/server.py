@@ -36,7 +36,6 @@ SESSION = Session()
 Base.metadata.create_all(engine)
 logging.info('SQLite session started.')
 
-
 PROJECT_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp'
 CHECK_INTERVAL: int = 60
 RECIPIENTS: List[str] = ['robot.ad']
@@ -117,11 +116,6 @@ def send_reply(message: win32.CDispatch) -> None:
 
 
 def run() -> None:
-    if not os.path.exists(REPLIES_FILE):
-        logging.info('File for replied emails not found. Creating replied emails file.')
-        with open(REPLIES_FILE, 'w'):
-            pass
-
     with dispatch('Outlook.Application') as outlook_namespace:
         logging.info('Outlook application started.')
         while True:
