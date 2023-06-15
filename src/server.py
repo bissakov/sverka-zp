@@ -90,10 +90,7 @@ def get_messages(outlook: win32.CDispatch) -> List[win32.CDispatch]:
 
 
 def attachments_present(message: win32.CDispatch) -> bool:
-    attachments = message.Attachments
-    if attachments.Count == 0:
-        return False
-    return True
+    return message.Attachments.Count != 0
 
 
 def reply_to_message(message: win32.CDispatch, reply_message: str) -> None:
