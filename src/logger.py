@@ -1,5 +1,6 @@
 import datetime
 import logging
+import warnings
 from os import makedirs
 from os.path import join
 
@@ -16,7 +17,6 @@ def setup_logger() -> None:
     makedirs(root_folder, exist_ok=True)
     actionlogger.enable()
     logger = logging.getLogger()
-    # logger.setLevel(logging.INFO)
     logger.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('%(asctime).19s %(levelname)s %(name)s %(threadName)s : %(message)s')
@@ -43,3 +43,6 @@ def setup_logger() -> None:
 
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
+
+    # UserWarning: 32-bit application should be automated using 32-bit Python
+    warnings.simplefilter('ignore', category=UserWarning)
