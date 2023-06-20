@@ -2,6 +2,8 @@
 *.zip
 .idea
 database/*
+*.xlsx
+excel_reports/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
