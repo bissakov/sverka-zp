@@ -1,18 +1,23 @@
 import logging
 import os
 import platform
+import shutil
 import time
-from contextlib import contextmanager
 from datetime import date
 from os.path import join
-from typing import Any, List
+from typing import Any, List, Tuple
 
 import win32com.client as win32
 from sqlalchemy import Column, ColumnElement, create_engine, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+import colvir
 import logger
+from config import ATTACHMENTS_MORE_THAN_ONE_REPLY, CHECK_INTERVAL, EXCEL_FOLDER, LACK_OF_ATTACHMENT_REPLY, RECIPIENTS, \
+    REPLY_MESSAGE, REQUIRED_FILE_FORMAT, SUBJECT, WRONG_ATTACHMENT_FORMAT_REPLY
+from src import excel
+from src.utils import dispatch
 from telegram import send_message
 
 logger.setup_logger()
@@ -36,30 +41,10 @@ SESSION = Session()
 Base.metadata.create_all(engine)
 logging.info('SQLite session started.')
 
-PROJECT_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp'
-CHECK_INTERVAL: int = 60
-RECIPIENTS: List[str] = ['robot.ad']
-SUBJECT: str = 'test'
-REPLIES_FILE: str = join(PROJECT_FOLDER, r'replied_emails\replied_emails.txt')
-REPLY_MESSAGE: str = 'Добрый день, {}\n\n' \
-                     'Ответ от робота\n\nСообщение сгенерировано автоматически.'
-LACK_OF_ATTACHMENT_REPLY: str = 'Добрый день, {}\n\n' \
-                                'Отсутствует вложенный файл.\n' \
-                                'Пожалуйста приложите файл и отправьте новое отдельное письмо.' \
-                                '\nПросьба не отвечать на это письмо.\n\n' \
-                                'Сообщение сгенерировано автоматически.'
 
-logging.info('Configuration loaded.')
-
-
-@contextmanager
-def dispatch(application: str) -> None:
-    app = win32.Dispatch(application)
-    namespace = app.GetNamespace('MAPI')
-    try:
-        yield namespace
-    finally:
-        app.Quit()
+def clean_database():
+    SESSION.query(Reply).delete()
+    SESSION.commit()
 
 
 def save_reply(message_id: str) -> None:
@@ -70,8 +55,7 @@ def save_reply(message_id: str) -> None:
 
 def get_replied_messages() -> list[ColumnElement[Any]]:
     replied_emails = SESSION.query(Reply.message_id).all()
-    replied_emails = [email[0] for email in replied_emails]
-    return replied_emails
+    return [email[0] for email in replied_emails]
 
 
 def get_messages(outlook: win32.CDispatch) -> List[win32.CDispatch]:
@@ -89,27 +73,38 @@ def get_messages(outlook: win32.CDispatch) -> List[win32.CDispatch]:
             message.EntryID not in get_replied_messages()]
 
 
-def attachments_present(message: win32.CDispatch) -> bool:
-    return message.Attachments.Count != 0
-
-
-def reply_to_message(message: win32.CDispatch, reply_message: str) -> None:
+def reply_to_message(message: win32.CDispatch, reply_message: str, attachment: str = None) -> None:
     reply = message.Reply()
     reply.Body = reply_message
+    if attachment:
+        attachment = f'{attachment}.zip' if 'zip' not in attachment else attachment
+        reply.Attachments.Add(attachment)
+        logging.info(f'Attached file "{attachment}".')
     reply.Send()
     save_reply(message.EntryID)
     logging.info(f'Saved message id "{message.EntryID}" to replied emails file.')
 
 
-def send_reply(message: win32.CDispatch) -> None:
-    if attachments_present(message):
-        logging.info(f'Sending succesful reply to {message.SenderName}.')
-        reply_to_message(message, REPLY_MESSAGE.format(message.SenderName))
-        logging.info(f'Succesful reply sent to {message.SenderName}.')
+def validate_message(message: win32.CDispatch) -> Tuple[bool, str, str]:
+    attachment_count = message.Attachments.Count
+    sender_name = message.SenderName
+    if attachment_count == 0:
+        return False, 'LACK_OF_ATTACHMENT_REPLY', LACK_OF_ATTACHMENT_REPLY.format(sender_name)
+    elif attachment_count > 1:
+        return False, 'ATTACHMENTS_MORE_THAN_ONE_REPLY', ATTACHMENTS_MORE_THAN_ONE_REPLY.format(sender_name)
+    elif not message.Attachments.Item(1).FileName.endswith(REQUIRED_FILE_FORMAT):
+        return False, 'WRONG_ATTACHMENT_FORMAT_REPLY', WRONG_ATTACHMENT_FORMAT_REPLY.format(sender_name)
     else:
-        logging.info(f'Sending reply of lack of attachment to {message.SenderName}.')
-        reply_to_message(message, LACK_OF_ATTACHMENT_REPLY.format(message.SenderName))
-        logging.info(f'Reply of lack of attachment sent to {message.SenderName}.')
+        return True, 'REPLY_MESSAGE', REPLY_MESSAGE.format(message.SenderName)
+
+
+def save_attachment(message: win32.CDispatch) -> str:
+    attachment = message.Attachments.Item(1)
+    excel_name_to_correct = attachment.FileName
+    excel_to_correct = join(EXCEL_FOLDER, excel_name_to_correct)
+    attachment.SaveAsFile(excel_to_correct)
+    logging.info(f'Saved attachment "{excel_name_to_correct}" to "{EXCEL_FOLDER}" folder.')
+    return excel_name_to_correct
 
 
 def run() -> None:
@@ -119,14 +114,34 @@ def run() -> None:
             try:
                 logging.info('Checking inbox for new messages.')
                 messages = get_messages(outlook_namespace)
+
                 if not messages:
-                    logging.info(f'No new messages. Waiting {CHECK_INTERVAL} seconds before checking for new messages.')
+                    logging.info(f'No new messages. Waiting {CHECK_INTERVAL} seconds before checking inbox.')
                     time.sleep(CHECK_INTERVAL)
                     continue
+
                 logging.info(f'Found {len(messages)} new messages.')
+
                 for message in messages:
-                    send_reply(message)
-                logging.info(f'All replies sent. Waiting {CHECK_INTERVAL} seconds before checking for new messages.')
+                    is_valid, reply_type, reply_message = validate_message(message)
+                    if not is_valid:
+                        logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
+                        reply_to_message(message, reply_message)
+                        logging.info(f'Reply {reply_type} sent to {message.SenderName}.')
+                    else:
+                        logging.info('Starting the process "Сверка зарплатной ведомости".')
+
+                        excel_name_to_correct = save_attachment(message)
+                        corrected_excel_name, excel_date = excel.correct(excel_name=excel_name_to_correct)
+                        colvir.run(corrected_excel_name, excel_date)
+                        zip_file = join(EXCEL_FOLDER, 'протокол_ошибок')
+                        shutil.make_archive(zip_file, 'zip', join(EXCEL_FOLDER, 'exports'))
+
+                        logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
+                        reply_to_message(message, reply_message, attachment=zip_file)
+                        logging.info(f'Reply {reply_type} sent to {message.SenderName}.')
+
+                logging.info(f'All replies sent. Waiting {CHECK_INTERVAL} seconds before checking inbox.')
                 time.sleep(CHECK_INTERVAL)
             except Exception as error:
                 logging.exception(f'An error {error.__class__.__name__} occurred.')
