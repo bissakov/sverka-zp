@@ -124,24 +124,32 @@ def import_excel(app: Application, excel_name: str) -> None:
 
     opened_windows_count = len(app.windows())
     current_windows_count = opened_windows_count
+    logging.info(f'Current windows count after starting export: {current_windows_count}')
 
     while current_windows_count == opened_windows_count:
         current_windows_count = len(app.windows())
+        logging.info(f'Current windows count: {current_windows_count}')
         sleep(30)
 
 
 def is_file_exported(file_name: str, excel: win32.CDispatch) -> bool:
     full_file_name = join(EXCEL_FOLDER, 'exports', file_name)
     if not exists(path=full_file_name):
+        logging.info(f'File {full_file_name} does not yet exist')
         return False
     if getsize(filename=full_file_name) == 0:
+        logging.info(f'File {full_file_name} is empty')
         return False
     try:
         os.rename(src=full_file_name, dst=full_file_name)
+        logging.info(f'File {full_file_name} is not locked by Excel')
     except OSError:
+        logging.info(f'File {full_file_name} is still being written by Excel')
         return False
     if not is_correct_file(root=join(EXCEL_FOLDER, 'exports'), xls_file_path=file_name, excel=excel):
+        logging.info(f'File {full_file_name} has no horizional alignment the first 50 rows.')
         return False
+    logging.info(f'File {full_file_name} exists and ready')
     return True
 
 
