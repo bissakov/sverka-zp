@@ -68,31 +68,41 @@ def correct(excel_name: str) -> Tuple[str, str]:
 
     workbook = openpyxl.load_workbook(filename=full_path, data_only=True)
     logging.info(f'Loaded workbook: {full_path}')
+
     default_sheet = workbook.worksheets[0]
     logging.info(f'Loaded default sheet: {default_sheet.title}')
+
     raw_dimension = Dimension(width=default_sheet.max_column, height=default_sheet.max_row)
     logging.info(f'Raw dimension: {raw_dimension}')
+
     rows = get_all_rows(default_sheet, raw_dimension)
     logging.info(f'Got all rows from default sheet. Rows: {len(rows)}')
 
     new_dimension = get_dimensions(sheet=default_sheet, rows=rows)
     logging.info(f'New dimension: {new_dimension}')
+
     rows = [row[0:new_dimension.width] for row in rows[:new_dimension.height]]
     logging.info(f'Got all new rows. New rows: {len(rows)}')
+
     new_workbook = openpyxl.Workbook()
     logging.info('Created new workbook.')
+
     new_sheet = new_workbook.worksheets[0]
     logging.info('Created new sheet.')
+
     date = get_date(rows=rows)
     logging.info(f'Got date: {date}')
 
     xl_copy(sheet_from=default_sheet, sheet_to=new_sheet, dimension=new_dimension)
     logging.info('Copied data from default sheet to new sheet.')
+
     remove_empty_cols(sheet=new_sheet, rows=rows)
     logging.info('Removed empty columns from new sheet.')
+
     corrected_excel_name = f'Prov_{date}.xlsx'
     corrected_excel_full_path = os.path.join(EXCEL_FOLDER, corrected_excel_name)
     logging.info(f'Corrected Excel name: {corrected_excel_name}')
+
     new_workbook.save(filename=corrected_excel_full_path)
     logging.info(f'Saved new workbook. Path: {corrected_excel_full_path}')
     logging.info('Finished correcting Excel file.')
