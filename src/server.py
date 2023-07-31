@@ -107,6 +107,20 @@ def save_attachment(message: win32.CDispatch) -> str:
     return excel_name_to_correct
 
 
+def make_archive() -> str:
+    zip_file = join(EXCEL_FOLDER, 'протокол_ошибок')
+    exports_folder = join(EXCEL_FOLDER, 'exports')
+    with dispatch('Excel.Application') as excel_app:
+        for file in os.listdir(exports_folder):
+            full_file_path = join(exports_folder, file)
+            excel_app.Workbooks.Open(full_file_path)
+            excel_app.ActiveWorkbook.SaveAs(full_file_path.replace('.xml', 'xlsb'), FileFormat=50)
+            excel_app.ActiveWorkbook.Close(True)
+            os.unlink(full_file_path)
+    shutil.make_archive(zip_file, 'zip', join(EXCEL_FOLDER, 'exports'))
+    return f'{zip_file}.zip'
+
+
 def run() -> None:
     with dispatch('Outlook.Application') as outlook_namespace:
         logging.info('Outlook application started.')
@@ -134,8 +148,7 @@ def run() -> None:
                         excel_name_to_correct = save_attachment(message)
                         corrected_excel_name, excel_date = excel.correct(excel_name=excel_name_to_correct)
                         colvir.run(corrected_excel_name, excel_date)
-                        zip_file = join(EXCEL_FOLDER, 'протокол_ошибок')
-                        shutil.make_archive(zip_file, 'zip', join(EXCEL_FOLDER, 'exports'))
+                        zip_file = make_archive()
 
                         logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
                         reply_to_message(message, reply_message, attachment=zip_file)
@@ -151,7 +164,7 @@ def run() -> None:
                 logging.exception(error)
                 raise error
             except KeyboardInterrupt as error:
-                logging.exception(f'Keyboard interrupt occurred.')
+                logging.exception('Keyboard interrupt occurred.')
                 SESSION.close()
                 logging.info('SQLite session closed.')
                 logging.exception(error)

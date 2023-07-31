@@ -171,7 +171,8 @@ def export(app: Application, excel_date: str,  report_type: str) -> None:
 
     export_win.wrapper_object().click()
 
-    file_name = f'{report_type}.xls' if report_type == 'Z_160_RPT_IMP_FZDOHOD' else f'{report_type}.xml'
+    # file_name = f'{report_type}.xls' if report_type == 'Z_160_RPT_IMP_FZDOHOD' else f'{report_type}.xml'
+    file_name = f'{report_type}.xml'
     full_file_name = join(EXCEL_FOLDER, 'exports', file_name)
 
     if exists(full_file_name):
@@ -182,7 +183,8 @@ def export(app: Application, excel_date: str,  report_type: str) -> None:
     sleep(1)
     file_win['Edit4'].set_text(text=file_name)
     try:
-        file_win['ComboBox'].select(11 if report_type == 'Z_160_RPT_IMP_FZDOHOD' else 7)
+        # file_win['ComboBox'].select(11 if report_type == 'Z_160_RPT_IMP_FZDOHOD' else 7)
+        file_win['ComboBox'].select(7)
         sleep(1)
     except (IndexError, ValueError):
         pass
