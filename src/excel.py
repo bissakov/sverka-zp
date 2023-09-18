@@ -2,7 +2,6 @@ import logging
 import os
 import re
 from datetime import datetime as dt
-from typing import List, Tuple
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
@@ -11,7 +10,7 @@ from config import EXCEL_FOLDER
 from data_structures import Dimension
 
 
-def get_all_rows(sheet: Worksheet, dim: Dimension) -> List[Tuple]:
+def get_all_rows(sheet: Worksheet, dim: Dimension) -> list[tuple[any]]:
     return [vals for vals in sheet.iter_rows(1, dim.height, 1, dim.width, values_only=True)]
 
 
@@ -22,20 +21,20 @@ def get_latest_full_cell(row: tuple) -> int:
         return len(row) - i
 
 
-def get_width(rows: List[Tuple]) -> int:
+def get_width(rows: list[tuple[any]]) -> int:
     last_positions = [get_latest_full_cell(row) for row in rows if get_latest_full_cell(row)]
     return max(set(last_positions), key=last_positions.count)
 
 
-def get_height(sheet: Worksheet, rows: List[Tuple]) -> int:
+def get_height(sheet: Worksheet, rows: list[tuple[any]]) -> int:
     return next((len(rows) - i for i, row in enumerate(reversed(rows)) if 'ВСЕГО' in row), sheet.max_row)
 
 
-def get_dimensions(sheet: Worksheet, rows: List[Tuple]) -> Dimension:
+def get_dimensions(sheet: Worksheet, rows: list[tuple[any]]) -> Dimension:
     return Dimension(width=get_width(rows=rows), height=get_height(sheet, rows=rows))
 
 
-def get_date(rows: List[Tuple]) -> str:
+def get_date(rows: list[tuple[any]]) -> str:
     months_dict = {1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'APR', 5: 'MAI', 6: 'IYN',
                    7: 'JYL', 8: 'AVG', 9: 'SEN', 10: 'OKT', 11: 'NOJ', 12: 'DEK'}
     date = dt.strptime(re.search(r'\d\d\.\d\d\.\d{4,}', rows[0][0]).group(), '%d.%m.%Y')
@@ -49,19 +48,19 @@ def xl_copy(sheet_from: Worksheet, sheet_to: Worksheet, dimension: Dimension) ->
             _ = sheet_to.cell(row=i, column=j, value=cell.value)
 
 
-def find_empty_columns(rows: List[Tuple]) -> List[int]:
+def find_empty_columns(rows: list[tuple[any]]) -> list[int]:
     st = next(i + 1 for i, col in enumerate(rows[3]) if col)
     cols = rows[3][st::]
     return [i + 1 for i, col in enumerate(cols, start=st) if not col]
 
 
-def remove_empty_cols(sheet: Worksheet, rows: List[Tuple]) -> None:
+def remove_empty_cols(sheet: Worksheet, rows: list[tuple[any]]) -> None:
     empty_cols = find_empty_columns(rows=rows)
     for i, col_idx in enumerate(empty_cols):
         sheet.delete_cols(col_idx - i, 1)
 
 
-def correct(excel_name: str) -> Tuple[str, str]:
+def correct(excel_name: str) -> tuple[str, str]:
     logging.info('Started correcting Excel file.')
 
     full_path = os.path.join(EXCEL_FOLDER, excel_name)

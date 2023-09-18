@@ -1,13 +1,10 @@
-from typing import List
-
-
 PROJECT_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp'
 EXCEL_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp\excel_reports'
 CHECK_INTERVAL: int = 300
-RECIPIENTS: List[str] = ['robot.ad']
+RECIPIENTS: list[str] = ['robot.ad']
 SUBJECT: str = 'test'
 
-REQUIRED_FILE_FORMAT: str = '.xlsx'
+# REQUIRED_FILE_FORMAT: str = '.xlsx'
 
 reply_dummy_message: str = 'Добрый день, {}\n\n' \
                            '{}\n\nПросьба не отвечать на это письмо.\n\n' \

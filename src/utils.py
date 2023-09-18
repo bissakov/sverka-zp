@@ -18,6 +18,10 @@ from pywinauto.base_wrapper import ElementNotEnabled
 
 @contextmanager
 def dispatch(application: str) -> None:
+    if 'Outlook' in application and get_current_process_pid(proc_name='OUTLOOK'):
+        kill_all_processes(proc_name='OUTLOOK')
+    if 'Excel' in application and get_current_process_pid(proc_name='EXCEL'):
+        kill_all_processes(proc_name='EXCEL')
     app = win32.Dispatch(application)
     namespace = app.GetNamespace('MAPI') if 'Outlook' in application else None
     if 'Excel' in application:

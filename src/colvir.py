@@ -3,7 +3,6 @@ import os
 from os import unlink
 from os.path import exists, getsize, join
 from time import sleep
-from typing import List, Optional
 
 import dotenv
 import pywinauto
@@ -34,7 +33,7 @@ def login() -> None:
         login_win['Edit'].wrapper_object().set_text(text=CREDENTIALS.psw)
         login_win['OK'].wrapper_object().click()
     except ElementAmbiguousError:
-        windows: List[DialogWrapper] = Desktop(backend='win32').windows()
+        windows: list[DialogWrapper] = Desktop(backend='win32').windows()
         for win in windows:
             if 'Вход в систему' not in win.window_text():
                 continue
@@ -59,7 +58,7 @@ def confirm_warning(app: Application) -> None:
                 break
 
 
-def open_colvir(retry_count: int = 0) -> Optional[Application]:
+def open_colvir(retry_count: int = 0) -> Application | None:
     if retry_count == 3:
         raise RuntimeError('Не удалось запустить Colvir')
 
@@ -171,7 +170,6 @@ def export(app: Application, excel_date: str,  report_type: str) -> None:
 
     export_win.wrapper_object().click()
 
-    # file_name = f'{report_type}.xls' if report_type == 'Z_160_RPT_IMP_FZDOHOD' else f'{report_type}.xml'
     file_name = f'{report_type}.xml'
     full_file_name = join(EXCEL_FOLDER, 'exports', file_name)
 
@@ -197,6 +195,7 @@ def export(app: Application, excel_date: str,  report_type: str) -> None:
         params_win['Edit4'].set_text(text='Штатные сотрудники')
     params_win['OK'].click()
 
+    sleep(30)
     with dispatch(application='Excel.Application') as excel:
         while not is_file_exported(file_name=file_name, excel=excel):
             sleep(30)

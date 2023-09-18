@@ -5,7 +5,6 @@ import shutil
 import time
 from datetime import date
 from os.path import join
-from typing import Any, List, Tuple
 
 import win32com.client as win32
 from sqlalchemy import Column, ColumnElement, create_engine, String
@@ -13,12 +12,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 import colvir
+import excel
 import logger
 from config import ATTACHMENTS_MORE_THAN_ONE_REPLY, CHECK_INTERVAL, EXCEL_FOLDER, LACK_OF_ATTACHMENT_REPLY, RECIPIENTS, \
-    REPLY_MESSAGE, REQUIRED_FILE_FORMAT, SUBJECT, WRONG_ATTACHMENT_FORMAT_REPLY
-from src import excel
-from src.utils import dispatch
+    REPLY_MESSAGE, SUBJECT
 from telegram import send_message
+from utils import dispatch
 
 logger.setup_logger()
 
@@ -53,12 +52,12 @@ def save_reply(message_id: str) -> None:
     SESSION.commit()
 
 
-def get_replied_messages() -> list[ColumnElement[Any]]:
+def get_replied_messages() -> list[ColumnElement]:
     replied_emails = SESSION.query(Reply.message_id).all()
     return [email[0] for email in replied_emails]
 
 
-def get_messages(outlook: win32.CDispatch) -> List[win32.CDispatch]:
+def get_messages(outlook: win32.CDispatch) -> list[win32.CDispatch]:
     inbox = outlook.GetDefaultFolder(6)
     messages = inbox.Items
     if messages.Count == 0:
@@ -85,15 +84,13 @@ def reply_to_message(message: win32.CDispatch, reply_message: str, attachment: s
     logging.info(f'Saved message id "{message.EntryID}" to replied emails file.')
 
 
-def validate_message(message: win32.CDispatch) -> Tuple[bool, str, str]:
+def validate_message(message: win32.CDispatch) -> tuple[bool, str, str]:
     attachment_count = message.Attachments.Count
     sender_name = message.SenderName
     if attachment_count == 0:
         return False, 'LACK_OF_ATTACHMENT_REPLY', LACK_OF_ATTACHMENT_REPLY.format(sender_name)
     elif attachment_count > 1:
         return False, 'ATTACHMENTS_MORE_THAN_ONE_REPLY', ATTACHMENTS_MORE_THAN_ONE_REPLY.format(sender_name)
-    elif not message.Attachments.Item(1).FileName.endswith(REQUIRED_FILE_FORMAT):
-        return False, 'WRONG_ATTACHMENT_FORMAT_REPLY', WRONG_ATTACHMENT_FORMAT_REPLY.format(sender_name)
     else:
         return True, 'REPLY_MESSAGE', REPLY_MESSAGE.format(message.SenderName)
 
@@ -103,6 +100,13 @@ def save_attachment(message: win32.CDispatch) -> str:
     excel_name_to_correct = attachment.FileName
     excel_to_correct = join(EXCEL_FOLDER, excel_name_to_correct)
     attachment.SaveAsFile(excel_to_correct)
+    if excel_to_correct.endswith('xls'):
+        with dispatch('Excel.Application') as excel_app:
+            excel_app.Workbooks.Open(excel_to_correct)
+            excel_app.ActiveWorkbook.SaveAs(excel_to_correct.replace('.xls', '.xlsx'), FileFormat=51)
+            excel_app.ActiveWorkbook.Close(True)
+            os.unlink(excel_to_correct)
+            excel_name_to_correct = excel_name_to_correct.replace('.xls', '.xlsx')
     logging.info(f'Saved attachment "{excel_name_to_correct}" to "{EXCEL_FOLDER}" folder.')
     return excel_name_to_correct
 
