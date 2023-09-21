@@ -1,8 +1,15 @@
+import os
+import dotenv
+import requests
+from requests.adapters import HTTPAdapter
+
+dotenv.load_dotenv()
+
 PROJECT_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp'
 EXCEL_FOLDER = r'C:\Users\robot.ad\Desktop\sverka-zp\excel_reports'
-CHECK_INTERVAL: int = 300
-RECIPIENTS: list[str] = ['robot.ad']
-SUBJECT: str = 'test'
+CHECK_INTERVAL: int = 60
+# RECIPIENTS: list[str] = ['robot.ad']
+SUBJECT: str = 'Сверка зарплатной ведомости'
 
 # REQUIRED_FILE_FORMAT: str = '.xlsx'
 
@@ -19,6 +26,12 @@ ATTACHMENTS_MORE_THAN_ONE_REPLY: str = reply_dummy_message.format('{}', 'Вло�
 WRONG_ATTACHMENT_FORMAT_REPLY: str = reply_dummy_message.format('{}', 'Неверный формат вложенного файла.\n'
                                                                       'Пожалуйста приложите файл в формате .xlsx '
                                                                       'и отправьте новое отдельное письмо.')
+
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+CHAT_ID = os.getenv('CHAT_ID')
+SESSION = requests.Session()
+SESSION.mount('http://', HTTPAdapter(max_retries=5))
+
 
 # excel_path = r'\\dbu00234\c$\Temp\Сверка'
 # excel_name = [f for f in listdir(excel_path) if isfile(join(excel_path, f))][0]

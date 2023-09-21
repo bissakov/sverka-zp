@@ -62,21 +62,13 @@ def get_window(title: str, app: Application, wait_for: str = 'exists', timeout: 
     return window
 
 
-def type_keys(window, keystrokes: str, step_delay: float = .1) -> None:
-    for command in list(filter(None, re.split(r'({.+?})', keystrokes))):
-        try:
-            window.type_keys(command)
-        except ElementNotEnabled:
-            sleep(1)
-            window.type_keys(command)
-        sleep(step_delay)
-
-
-def choose_mode(app: Application, mode: str) -> None:
+def choose_mode(mode: str, app: Application | None = None) -> None:
+    if not app:
+        app = Application(backend='win32').connect(path=r'C:CBS_R_NEWCBS_RCOLVIR.EXE')
     mode_win = app.window(title='Выбор режима')
-    mode_win.wait(wait_for='exists', timeout=60)
-    mode_win['Edit2'].wrapper_object().set_text(text=mode)
-    mode_win['Edit2'].wrapper_object().send_keystrokes('~')
+    mode_win['Edit2'].set_text(text=mode)
+    mode_win['Edit2'].send_keystrokes('~')
+    # press(mode_win['Edit2'], '~')
 
 
 def is_errored(app: Application) -> bool:
@@ -87,20 +79,65 @@ def is_errored(app: Application) -> bool:
     return False
 
 
-def is_correct_file(root: str, xls_file_path: str, excel: win32.Dispatch) -> bool:
-    xls_file_path = join(root, xls_file_path)
-    shutil.copyfile(src=xls_file_path, dst=f'{xls_file_path}_copy.xls')
-    xls_file_path = f'{xls_file_path}_copy.xls'
-    xlsx_file_path = xls_file_path + 'x'
+def is_correct_file(excel_full_file_path: str, excel: win32.Dispatch) -> bool:
+    extension = excel_full_file_path.split('.')[-1]
+    excel_full_file_path_no_ext = '.'.join(excel_full_file_path.split('.')[0:-1])
+    excel_copy_path = f'{excel_full_file_path_no_ext}_copy.{extension}'
+    shutil.copyfile(src=excel_full_file_path, dst=excel_copy_path)
+    xlsx_file_path = f'{excel_full_file_path_no_ext}.xlsx'
 
     if not exists(path=xlsx_file_path):
-        wb = excel.Workbooks.Open(xls_file_path)
+        wb = excel.Workbooks.Open(excel_copy_path)
         wb.SaveAs(xlsx_file_path, FileFormat=51)
         wb.Close()
 
     workbook: Workbook = openpyxl.load_workbook(xlsx_file_path, data_only=True)
     sheet: Worksheet = workbook.active
     unlink(xlsx_file_path)
-    unlink(xls_file_path)
+    unlink(excel_copy_path)
 
     return next((True for row in sheet.iter_rows(max_row=50) for cell in row if cell.alignment.horizontal), False)
+
+
+def type_keys(window: WindowSpecification, keystrokes: str, step_delay: float = .1) -> None:
+    set_focus(window)
+    for command in list(filter(None, re.split(r'({.+?})', keystrokes))):
+        try:
+            window.type_keys(command)
+        except ElementNotEnabled:
+            sleep(1)
+            window.type_keys(command)
+        sleep(step_delay)
+
+
+def press(win: WindowSpecification, key: str, pause: float = 0) -> None:
+    set_focus(win)
+    win.type_keys(key, pause=pause)
+
+
+def set_focus(win: WindowSpecification) -> None:
+    while not win.is_active():
+        try:
+            win.set_focus()
+            break
+        except Exception as error:
+            _ = error
+            sleep(1)
+            continue
+
+
+def click_input(win: WindowSpecification, coords: tuple[int, int] = None, delay: float = 0) -> None:
+    sleep(delay)
+    set_focus(win)
+    sleep(delay)
+    if coords:
+        win.click_input(button='left', coords=coords, absolute=True)
+    else:
+        win.click_input()
+
+
+def double_click_input(win: WindowSpecification, delay: float = 0) -> None:
+    sleep(delay)
+    set_focus(win)
+    sleep(delay)
+    win.double_click_input()

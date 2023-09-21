@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class Credentials:
-    usr: str
-    psw: str
+    user: str
+    password: str
 
 
 @dataclass

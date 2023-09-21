@@ -1,8 +1,7 @@
 import logging
 import os
-import platform
 import shutil
-import time
+from time import sleep
 from datetime import date
 from os.path import join
 
@@ -14,9 +13,8 @@ from sqlalchemy.orm import sessionmaker
 import colvir
 import excel
 import logger
-from config import ATTACHMENTS_MORE_THAN_ONE_REPLY, CHECK_INTERVAL, EXCEL_FOLDER, LACK_OF_ATTACHMENT_REPLY, RECIPIENTS, \
+from config import ATTACHMENTS_MORE_THAN_ONE_REPLY, CHECK_INTERVAL, EXCEL_FOLDER, LACK_OF_ATTACHMENT_REPLY, \
     REPLY_MESSAGE, SUBJECT
-from telegram import send_message
 from utils import dispatch
 
 logger.setup_logger()
@@ -35,25 +33,25 @@ class Reply(Base):
 db_root_folder = r'C:\Users\robot.ad\Desktop\sverka-zp\database'
 os.makedirs(db_root_folder, exist_ok=True)
 engine = create_engine(f'sqlite:///{db_root_folder}/replies.db')
-Session = sessionmaker(bind=engine)
-SESSION = Session()
 Base.metadata.create_all(engine)
-logging.info('SQLite session started.')
 
 
 def clean_database():
-    SESSION.query(Reply).delete()
-    SESSION.commit()
+    with sessionmaker(bind=engine)() as session:
+        session.query(Reply).delete()
+        session.commit()
 
 
 def save_reply(message_id: str) -> None:
-    replied_email = Reply(message_id=message_id)
-    SESSION.add(replied_email)
-    SESSION.commit()
+    with sessionmaker(bind=engine)() as session:
+        replied_email = Reply(message_id=message_id)
+        session.add(replied_email)
+        session.commit()
 
 
 def get_replied_messages() -> list[ColumnElement]:
-    replied_emails = SESSION.query(Reply.message_id).all()
+    with sessionmaker(bind=engine)() as session:
+        replied_emails = session.query(Reply.message_id).all()
     return [email[0] for email in replied_emails]
 
 
@@ -68,7 +66,6 @@ def get_messages(outlook: win32.CDispatch) -> list[win32.CDispatch]:
             message.ReceivedTime.date() == date.today() and
             message.Subject == SUBJECT and
             'RE:' not in message.Subject and
-            message.SenderName in RECIPIENTS and
             message.EntryID not in get_replied_messages()]
 
 
@@ -100,76 +97,64 @@ def save_attachment(message: win32.CDispatch) -> str:
     excel_name_to_correct = attachment.FileName
     excel_to_correct = join(EXCEL_FOLDER, excel_name_to_correct)
     attachment.SaveAsFile(excel_to_correct)
-    if excel_to_correct.endswith('xls'):
+    if not excel_to_correct.endswith('xlsx'):
         with dispatch('Excel.Application') as excel_app:
             excel_app.Workbooks.Open(excel_to_correct)
-            excel_app.ActiveWorkbook.SaveAs(excel_to_correct.replace('.xls', '.xlsx'), FileFormat=51)
+            extension = excel_to_correct.split('.')[-1]
+            excel_app.ActiveWorkbook.SaveAs(excel_to_correct.replace(f'.{extension}', '.xlsx'), FileFormat=51)
             excel_app.ActiveWorkbook.Close(True)
             os.unlink(excel_to_correct)
-            excel_name_to_correct = excel_name_to_correct.replace('.xls', '.xlsx')
+            excel_name_to_correct = excel_name_to_correct.replace(f'.{extension}', '.xlsx')
     logging.info(f'Saved attachment "{excel_name_to_correct}" to "{EXCEL_FOLDER}" folder.')
     return excel_name_to_correct
 
 
-def make_archive() -> str:
+def make_archive(exports_folder: str) -> str:
     zip_file = join(EXCEL_FOLDER, 'протокол_ошибок')
-    exports_folder = join(EXCEL_FOLDER, 'exports')
     with dispatch('Excel.Application') as excel_app:
         for file in os.listdir(exports_folder):
             full_file_path = join(exports_folder, file)
             excel_app.Workbooks.Open(full_file_path)
-            excel_app.ActiveWorkbook.SaveAs(full_file_path.replace('.xml', 'xlsb'), FileFormat=50)
+            excel_app.ActiveWorkbook.SaveAs(full_file_path.replace('.xls', ''), FileFormat=50)
             excel_app.ActiveWorkbook.Close(True)
             os.unlink(full_file_path)
-    shutil.make_archive(zip_file, 'zip', join(EXCEL_FOLDER, 'exports'))
+    shutil.make_archive(zip_file, 'zip', exports_folder)
     return f'{zip_file}.zip'
 
 
-def run() -> None:
+def run(check_interval: int = CHECK_INTERVAL) -> None:
     with dispatch('Outlook.Application') as outlook_namespace:
         logging.info('Outlook application started.')
         while True:
-            try:
-                logging.info('Checking inbox for new messages.')
-                messages = get_messages(outlook_namespace)
+            logging.info('Checking inbox for new messages.')
+            messages = get_messages(outlook_namespace)
 
-                if not messages:
-                    logging.info(f'No new messages. Waiting {CHECK_INTERVAL} seconds before checking inbox.')
-                    time.sleep(CHECK_INTERVAL)
-                    continue
+            if not messages:
+                logging.info(f'No new messages. Waiting {check_interval} seconds before checking inbox.')
+                sleep(check_interval)
+                continue
 
-                logging.info(f'Found {len(messages)} new messages.')
+            logging.info(f'Found {len(messages)} new messages.')
 
-                for message in messages:
-                    is_valid, reply_type, reply_message = validate_message(message)
-                    if not is_valid:
-                        logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
-                        reply_to_message(message, reply_message)
-                        logging.info(f'Reply {reply_type} sent to {message.SenderName}.')
-                    else:
-                        logging.info('Starting the process "Сверка зарплатной ведомости".')
+            for message in messages:
+                is_valid, reply_type, reply_message = validate_message(message)
+                if not is_valid:
+                    logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
+                    reply_to_message(message, reply_message)
+                    logging.info(f'Reply {reply_type} sent to {message.SenderName}.')
+                else:
+                    logging.info('Starting the process "Сверка зарплатной ведомости".')
 
-                        excel_name_to_correct = save_attachment(message)
-                        corrected_excel_name, excel_date = excel.correct(excel_name=excel_name_to_correct)
-                        colvir.run(corrected_excel_name, excel_date)
-                        zip_file = make_archive()
+                    excel_name_to_correct = save_attachment(message)
+                    corrected_excel_name, excel_date = excel.correct(excel_name=excel_name_to_correct)
+                    exports_folder = join(EXCEL_FOLDER, rf'exports\{excel_date}')
+                    os.makedirs(exports_folder, exist_ok=True)
+                    colvir.run(corrected_excel_name, exports_folder)
+                    zip_file = make_archive(exports_folder)
 
-                        logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
-                        reply_to_message(message, reply_message, attachment=zip_file)
-                        logging.info(f'Reply {reply_type} sent to {message.SenderName}.')
+                    logging.info(f'Sending {reply_type} reply to {message.SenderName}.')
+                    reply_to_message(message, reply_message, attachment=zip_file)
+                    logging.info(f'Reply {reply_type} sent to {message.SenderName}.')
 
-                logging.info(f'All replies sent. Waiting {CHECK_INTERVAL} seconds before checking inbox.')
-                time.sleep(CHECK_INTERVAL)
-            except Exception as error:
-                logging.exception(f'An error {error.__class__.__name__} occurred.')
-                send_message(f'Error occurred on {platform.node()}\nProcess: "Сверка зарплатной ведомости"\nError:\n{error}')
-                SESSION.close()
-                logging.info('SQLite session closed.')
-                logging.exception(error)
-                raise error
-            except KeyboardInterrupt as error:
-                logging.exception('Keyboard interrupt occurred.')
-                SESSION.close()
-                logging.info('SQLite session closed.')
-                logging.exception(error)
-                raise error
+            logging.info(f'All replies sent. Waiting {check_interval} seconds before checking inbox.')
+            sleep(check_interval)
